@@ -35,7 +35,6 @@ func run(ctx context.Context, namespace, name string, client kubernetes.Interfac
 		namespace,
 		name,
 		client.CoreV1(),
-		client.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
 			Identity:      id,
 		})

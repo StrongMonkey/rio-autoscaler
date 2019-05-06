@@ -1,9 +1,21 @@
-package: github.com/rancher/rio-autoscaler
+package: package=github.com/rancher/rio-autoscaler
 import:
+- package: cloud.google.com/go
+  version: v0.34.0
+- package: contrib.go.opencensus.io/exporter/stackdriver
+  version: c06c82c832edca4eaf7b0241bd655560a1be0346
+- package: github.com/aws/aws-sdk-go
+  version: v1.14.12
+- package: github.com/beorn7/perks
+  version: 3ac7bf7a47d159a033b107610db8a1b6575507a4
+- package: github.com/census-instrumentation/opencensus-proto
+  version: v0.1.0
 - package: github.com/davecgh/go-spew
   version: v1.1.0-1-g782f4967f2dc45
 - package: github.com/evanphx/json-patch
   version: v4.1.0-19-g5858425f75500d
+- package: github.com/go-ini/ini
+  version: v1.25.4
 - package: github.com/gogo/protobuf
   version: v0.5
 - package: github.com/golang/groupcache
@@ -13,30 +25,40 @@ import:
 - package: github.com/google/btree
   version: 7d79101e329e5a3adf994758c578dab82b90c017
 - package: github.com/google/go-cmp
-  version: v0.2.0
+  version: 6f77996f0c42f7b84e5a2b252227263f93432e9b
+- package: github.com/google/go-containerregistry
+  version: ec69c4a8a1bff25fcbe096fcb32c9a6543fbdccf
 - package: github.com/google/gofuzz
   version: 44d81051d367757e1c7c6a5a86423ece9afcf63c
+- package: github.com/googleapis/gax-go
+  version: v2.0.2
 - package: github.com/googleapis/gnostic
   version: 0c5108395e2debce0d731cf0287ddf7242066aba
+- package: github.com/gorilla/websocket
+  version: v1.2.0-9-g4201258b820c74
 - package: github.com/gregjones/httpcache
   version: 787624de3eb7bd915c329cba748687a3b22666a6
 - package: github.com/hashicorp/golang-lru
   version: a0d98a5f288019575c6d1f4bb1573fef2d1fcdc4
 - package: github.com/imdario/mergo
   version: v0.3.5
+- package: github.com/jmespath/go-jmespath
+  version: 0.2.2-12-g0b12d6b521d83f
 - package: github.com/json-iterator/go
   version: 1.1.4
 - package: github.com/knative/build
-  version: v0.2.0
+  version: dd3ceb3323922b899a0a913f885fcf59943e7b59
 - package: github.com/knative/caching
-  version: 6be7c335a215cbad363aea46762571bbe79df22d
+  version: afa9ee174c6f2072b12dbb4b3bf64be8ec7bc30b
 - package: github.com/knative/pkg
-  version: b477f891a83bb9b4796987c0b211c658a2ab4d00
-  repo: https://github.com/rancher/pkg.git
+  version: 58f21ce851a46d70e7a97e82e43dbfdf6acc6b80
+  repo: https://github.com/StrongMonkey/pkg.git
 - package: github.com/knative/serving
-  version: v0.2.3
+  version: v0.5.2
 - package: github.com/mattbaird/jsonpatch
   version: 81af80346b1a01caae0cbc27fd3c1ba5b11e189f
+- package: github.com/matttproud/golang_protobuf_extensions
+  version: v1.0.1
 - package: github.com/modern-go/concurrent
   version: 1.0.3
 - package: github.com/modern-go/reflect2
@@ -49,8 +71,12 @@ import:
   version: v0.8.0
 - package: github.com/prometheus/client_golang
   version: master
+- package: github.com/prometheus/client_model
+  version: model-0.0.2-12-gfa8ad6fec33561
 - package: github.com/prometheus/common
   version: 13ba4ddd0caa9c28ca7b7bffe1dfa9ed8d5ef207
+- package: github.com/prometheus/procfs
+  version: 65c1f6f8f0fc1e2185eb9863a3bc751496404259
 - package: github.com/rancher/mapper
   version: 3504e44bb04110ef0b083745366cd1c70f53d8b3
 - package: github.com/rancher/rancher
@@ -59,7 +85,7 @@ import:
   version: f4ea6f2632ebd8051c7e28069443e9e1e36ce900
   repo: https://github.com/StrongMonkey/rio.git
 - package: github.com/rancher/wrangler
-  version: 31f3a4b0e30cf2887e5077f5f39831dffd322cf3
+  version: a8b539c006b5abbf4645bdb520c05da893393bf8
   repo: https://github.com/StrongMonkey/wrangler.git
 - package: github.com/sirupsen/logrus
   version: v1.0.3-11-g89742aefa4b206
@@ -67,13 +93,7 @@ import:
   version: v1.0.1
 - package: github.com/urfave/cli
   version: v1.18.0
-- package: go.opencensus.io/exemplar
-  version: v0.18.0
-- package: go.opencensus.io/internal/tagencoding
-  version: v0.18.0
-- package: go.opencensus.io/stats
-  version: v0.18.0
-- package: go.opencensus.io/tag
+- package: go.opencensus.io
   version: v0.18.0
 - package: go.uber.org/atomic
   version: v1.3.2
@@ -88,15 +108,21 @@ import:
 - package: golang.org/x/net
   version: 891ebc4b82d6e74f468c533b06f983c7be918a96
 - package: golang.org/x/oauth2
-  version: a6bd8cefa1811bd24b86f8902872e4e8225f74c4
+  version: c57b0facaced709681d9f90397429b9430a74754
 - package: golang.org/x/sync
-  version: 450f422ab23cf9881c94e2db30cac0eb1b7cf80c
+  version: 112230192c580c3556b8cee6403af37a4fc5f28c
 - package: golang.org/x/sys
   version: 95c6576299259db960f6c5b9b69ea52422860fce
 - package: golang.org/x/text
   version: b19bf474d317b857955b12035d2c5acb57ce8b01
 - package: golang.org/x/time
   version: f51c12702a4d776e4c1fa9b0fabab841babae631
+- package: google.golang.org/api
+  version: 3639d6d93f377f39a1de765fa4ef37b3c7ca8bd9
+- package: google.golang.org/genproto
+  version: 94acd270e44e65579b9ee3cdab25034d33fed608
+- package: google.golang.org/grpc
+  version: v1.13.0
 - package: gopkg.in/inf.v0
   version: v0.9.0
 - package: gopkg.in/yaml.v2

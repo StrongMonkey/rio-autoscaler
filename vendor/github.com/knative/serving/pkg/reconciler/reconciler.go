@@ -19,20 +19,27 @@ package reconciler
 import (
 	"time"
 
+	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/discovery/cached"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
+	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
+	"k8s.io/client-go/scale"
+	"k8s.io/client-go/tools/record"
 
 	cachingclientset "github.com/knative/caching/pkg/client/clientset/versioned"
 	sharedclientset "github.com/knative/pkg/client/clientset/versioned"
 	"github.com/knative/pkg/configmap"
 	"github.com/knative/pkg/logging/logkey"
+	"github.com/knative/pkg/system"
 	clientset "github.com/knative/serving/pkg/client/clientset/versioned"
 	servingScheme "github.com/knative/serving/pkg/client/clientset/versioned/scheme"
-	"go.uber.org/zap"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
-	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
-	"k8s.io/client-go/tools/record"
 )
 
 // Options defines the common reconciler options.
@@ -41,15 +48,62 @@ import (
 type Options struct {
 	KubeClientSet    kubernetes.Interface
 	SharedClientSet  sharedclientset.Interface
-	ServingClientSet clientset.Interface
 	DynamicClientSet dynamic.Interface
+	ScaleClientSet   scale.ScalesGetter
+
+	ServingClientSet clientset.Interface
 	CachingClientSet cachingclientset.Interface
+
+	Recorder      record.EventRecorder
+	StatsReporter StatsReporter
 
 	ConfigMapWatcher configmap.Watcher
 	Logger           *zap.SugaredLogger
 
 	ResyncPeriod time.Duration
 	StopChannel  <-chan struct{}
+}
+
+// This is mutable for testing.
+var resetPeriod = 30 * time.Second
+
+func NewOptionsOrDie(cfg *rest.Config, logger *zap.SugaredLogger, stopCh <-chan struct{}) Options {
+	kubeClient := kubernetes.NewForConfigOrDie(cfg)
+	sharedClient := sharedclientset.NewForConfigOrDie(cfg)
+	servingClient := clientset.NewForConfigOrDie(cfg)
+	dynamicClient := dynamic.NewForConfigOrDie(cfg)
+	cachingClient := cachingclientset.NewForConfigOrDie(cfg)
+
+	// This is based on how Kubernetes sets up its discovery-based client:
+	// https://github.com/kubernetes/kubernetes/blob/f2c6473e2/cmd/kube-controller-manager/app/controllermanager.go#L410-L414
+	cachedClient := cached.NewMemCacheClient(kubeClient.Discovery())
+	rm := restmapper.NewDeferredDiscoveryRESTMapper(cachedClient)
+	go wait.Until(func() {
+		rm.Reset()
+	}, resetPeriod, stopCh)
+
+	// This is based on how Kubernetes sets up its scale client based on discovery:
+	// https://github.com/kubernetes/kubernetes/blob/94c2c6c84/cmd/kube-controller-manager/app/autoscaling.go#L75-L81
+	scaleClient, err := scale.NewForConfig(cfg, rm, dynamic.LegacyAPIPathResolverFunc,
+		scale.NewDiscoveryScaleKindResolver(kubeClient.Discovery()))
+	if err != nil {
+		panic(err)
+	}
+
+	configMapWatcher := configmap.NewInformedWatcher(kubeClient, system.Namespace())
+
+	return Options{
+		KubeClientSet:    kubeClient,
+		SharedClientSet:  sharedClient,
+		DynamicClientSet: dynamicClient,
+		ScaleClientSet:   scaleClient,
+		ServingClientSet: servingClient,
+		CachingClientSet: cachingClient,
+		ConfigMapWatcher: configMapWatcher,
+		Logger:           logger,
+		ResyncPeriod:     10 * time.Hour, // Based on controller-runtime default.
+		StopChannel:      stopCh,
+	}
 }
 
 // GetTrackerLease returns a multiple of the resync period to use as the
@@ -84,6 +138,9 @@ type Base struct {
 	// Kubernetes API.
 	Recorder record.EventRecorder
 
+	// StatsReporter reports reconciler's metrics.
+	StatsReporter StatsReporter
+
 	// Sugared logger is easier to use but is not as performant as the
 	// raw logger. In performance critical paths, call logger.Desugar()
 	// and use the returned raw logger instead. In addition to the
@@ -98,13 +155,35 @@ func NewBase(opt Options, controllerAgentName string) *Base {
 	// Enrich the logs with controller name
 	logger := opt.Logger.Named(controllerAgentName).With(zap.String(logkey.ControllerType, controllerAgentName))
 
-	// Create event broadcaster
-	logger.Debug("Creating event broadcaster")
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(logger.Named("event-broadcaster").Infof)
-	eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: opt.KubeClientSet.CoreV1().Events("")})
-	recorder := eventBroadcaster.NewRecorder(
-		scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
+	recorder := opt.Recorder
+	if recorder == nil {
+		// Create event broadcaster
+		logger.Debug("Creating event broadcaster")
+		eventBroadcaster := record.NewBroadcaster()
+		watches := []watch.Interface{
+			eventBroadcaster.StartLogging(logger.Named("event-broadcaster").Infof),
+			eventBroadcaster.StartRecordingToSink(
+				&typedcorev1.EventSinkImpl{Interface: opt.KubeClientSet.CoreV1().Events("")}),
+		}
+		recorder = eventBroadcaster.NewRecorder(
+			scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
+		go func() {
+			<-opt.StopChannel
+			for _, w := range watches {
+				w.Stop()
+			}
+		}()
+	}
+
+	statsReporter := opt.StatsReporter
+	if statsReporter == nil {
+		logger.Debug("Creating stats reporter")
+		var err error
+		statsReporter, err = NewStatsReporter(controllerAgentName)
+		if err != nil {
+			logger.Fatal(err)
+		}
+	}
 
 	base := &Base{
 		KubeClientSet:    opt.KubeClientSet,
@@ -114,6 +193,7 @@ func NewBase(opt Options, controllerAgentName string) *Base {
 		CachingClientSet: opt.CachingClientSet,
 		ConfigMapWatcher: opt.ConfigMapWatcher,
 		Recorder:         recorder,
+		StatsReporter:    statsReporter,
 		Logger:           logger,
 	}
 
