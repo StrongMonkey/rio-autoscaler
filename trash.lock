@@ -2,12 +2,8 @@ package: github.com/rancher/rio-autoscaler
 import:
 - package: github.com/davecgh/go-spew
   version: v1.1.0-1-g782f4967f2dc45
-- package: github.com/docker/distribution
-  version: v2.6.0-rc.1-209-gedc3ab29cdff86
 - package: github.com/evanphx/json-patch
   version: v4.1.0-19-g5858425f75500d
-- package: github.com/ghodss/yaml
-  version: v1.0.0-4-gc7ce16629ff4cd
 - package: github.com/gogo/protobuf
   version: v0.5
 - package: github.com/golang/groupcache
@@ -47,8 +43,6 @@ import:
   version: v1.0.1
 - package: github.com/mxk/go-flowrate
   version: cca7078d478f8520f85629ad7c68962d31ed7682
-- package: github.com/opencontainers/go-digest
-  version: a6d0ee40d4207ea02364bd3b9e8e77b9159ba1eb
 - package: github.com/peterbourgon/diskv
   version: v2.0.1
 - package: github.com/pkg/errors
@@ -65,7 +59,8 @@ import:
   version: f4ea6f2632ebd8051c7e28069443e9e1e36ce900
   repo: https://github.com/StrongMonkey/rio.git
 - package: github.com/rancher/wrangler
-  version: b76ec8e2558efd9a1a996c1cb4d76eb258b1219f
+  version: 31f3a4b0e30cf2887e5077f5f39831dffd322cf3
+  repo: https://github.com/StrongMonkey/wrangler.git
 - package: github.com/sirupsen/logrus
   version: v1.0.3-11-g89742aefa4b206
 - package: github.com/spf13/pflag
@@ -108,12 +103,5 @@ import:
   version: v2.2.1
 - package: k8s.io/klog
   version: 8139d8cb77af419532b33dfa7dd09fbc5f1d344f
-- package: k8s.io/kubernetes
-  version: v1.13.4-k3s.2
-  repo: https://github.com/rancher/k3s.git
-  transitive: true
-  staging: true
-- package: k8s.io/utils
-  version: 66066c83e385e385ccc3c964b44fd7dcd413d0ed
 - package: sigs.k8s.io/yaml
   version: v1.1.0
