@@ -10,10 +10,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 
-	kpa "github.com/knative/serving/pkg/apis/autoscaling/v1alpha1"
-	"github.com/knative/serving/pkg/apis/serving/v1alpha1"
 	"github.com/knative/serving/pkg/autoscaler"
-	"github.com/knative/serving/pkg/reconciler/v1alpha1/autoscaling"
 	autoscalev1 "github.com/rancher/rio/pkg/apis/autoscale.rio.cattle.io/v1"
 	corev1controller "github.com/rancher/rio/pkg/generated/controllers/core/v1"
 	riov1controller "github.com/rancher/rio/pkg/generated/controllers/rio.cattle.io/v1"
@@ -25,7 +22,7 @@ var SyncMap sync.Map
 
 type ssrHandler struct {
 	ctx         context.Context
-	metrics     autoscaling.KPAMetrics
+	metrics     *autoscaler.MultiScaler
 	pollers     map[string]*poller
 	pollerLock  sync.Mutex
 	rioServices riov1controller.ServiceController
@@ -33,7 +30,7 @@ type ssrHandler struct {
 	pods        corev1controller.PodCache
 }
 
-func NewHandler(ctx context.Context, metrics autoscaling.KPAMetrics,
+func NewHandler(ctx context.Context, metrics *autoscaler.MultiScaler,
 	rioServiceClient riov1controller.ServiceController,
 	serviceClientCache corev1controller.ServiceCache,
 	podClientCache corev1controller.PodCache) *ssrHandler {
@@ -57,7 +54,7 @@ func (s *ssrHandler) OnChange(key string, obj runtime.Object) (runtime.Object, e
 
 	s.monitor(ssr)
 
-	ssr.Status.DesiredScale = bounded(m.DesiredScale, ssr.Spec.MinScale, ssr.Spec.MaxScale)
+	ssr.Status.DesiredScale = bounded(m.Status.DesiredScale, ssr.Spec.MinScale, ssr.Spec.MaxScale)
 	return ssr, SetDeploymentScale(s.rioServices, ssr)
 }
 
@@ -85,15 +82,21 @@ func (s *ssrHandler) OnRemove(key string, ssr *autoscalev1.ServiceScaleRecommend
 }
 
 func (s *ssrHandler) deleteMetric(ssr *autoscalev1.ServiceScaleRecommendation) error {
-	key := key(ssr)
-	return s.metrics.Delete(s.ctx, key)
+	return s.metrics.Delete(s.ctx, ssr.Namespace, ssr.Name)
 }
 
-func (s *ssrHandler) createMetric(ssr *autoscalev1.ServiceScaleRecommendation) (*autoscaler.Metric, error) {
-	key := key(ssr)
-	metric, err := s.metrics.Get(s.ctx, key)
+func (s *ssrHandler) createMetric(ssr *autoscalev1.ServiceScaleRecommendation) (*autoscaler.Decider, error) {
+	metric, err := s.metrics.Get(s.ctx, ssr.Namespace, ssr.Name)
 	if err != nil && errors.IsNotFound(err) {
-		return s.metrics.Create(s.ctx, toKPA(ssr))
+		return s.metrics.Create(s.ctx, &autoscaler.Decider{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ssr.Name,
+				Namespace: ssr.Namespace,
+			},
+			Spec: autoscaler.DeciderSpec{
+				TargetConcurrency: float64(ssr.Spec.Concurrency),
+			},
+		})
 	} else if err != nil {
 		return nil, err
 	}
@@ -131,26 +134,10 @@ func (s *ssrHandler) monitor(ssr *autoscalev1.ServiceScaleRecommendation) {
 	}
 
 	p = newPoller(s.ctx, ssr, s.pods, func(stat autoscaler.Stat) {
-		s.metrics.(*autoscaler.MultiScaler).RecordStat(key, stat)
+		s.metrics.RecordStat(key, stat)
 	})
 
 	s.pollers[key] = p
-}
-
-func toKPA(ssr *autoscalev1.ServiceScaleRecommendation) *kpa.PodAutoscaler {
-	return &kpa.PodAutoscaler{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "PodAutoscaler",
-			APIVersion: kpa.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: ssr.Namespace,
-			Name:      ssr.Name,
-		},
-		Spec: kpa.PodAutoscalerSpec{
-			ContainerConcurrency: v1alpha1.RevisionContainerConcurrencyType(ssr.Spec.Concurrency),
-		},
-	}
 }
 
 func key(ssr *autoscalev1.ServiceScaleRecommendation) string {

@@ -12,7 +12,7 @@ import (
 )
 
 func Register(ctx context.Context, rContext *types.Context) error {
-	metrics := metrics.New(ctx)
+	metrics := metrics.New(ctx, rContext)
 	metrics.Watch(func(key string) {
 		namespace, name := kv.Split(key, "/")
 		rContext.AutoScale.Autoscale().V1().ServiceScaleRecommendation().Enqueue(namespace, name)

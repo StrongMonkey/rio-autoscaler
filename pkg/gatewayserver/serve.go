@@ -1,10 +1,17 @@
 package gatewayserver
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strconv"
+	"sync"
 	"time"
+
+	"go.uber.org/zap"
 
 	activatorutil "github.com/knative/serving/pkg/activator/util"
 	"github.com/rancher/rio-autoscaler/pkg/controllers/gateway"
@@ -24,6 +31,7 @@ const (
 	RioNameHeader          = "X-Rio-ServiceName"
 	RioNamespaceHeader     = "X-Rio-Namespace"
 	RioPortHeader          = "X-Rio-ServicePort"
+	RequestCountHTTPHeader = "knative-activator-num-retries"
 )
 
 func NewHandler(rContext *types.Context) Handler {
@@ -87,14 +95,14 @@ func serveFQDN(name, namespace, port string, w http.ResponseWriter, r *http.Requ
 	r.Host = targetUrl.Host
 
 	// todo: check if 503 is actually coming from application or envoy
-	shouldRetry := activatorutil.RetryStatus(http.StatusServiceUnavailable)
+	shouldRetry := retryStatus(http.StatusServiceUnavailable)
 	backoffSettings := wait.Backoff{
 		Duration: minRetryInterval,
 		Factor:   exponentialBackoffBase,
 		Steps:    maxRetries,
 	}
 
-	rt := activatorutil.NewRetryRoundTripper(activatorutil.AutoTransport, logger.SugaredLogger, backoffSettings, shouldRetry)
+	rt := NewRetryRoundTripper(activatorutil.AutoTransport, logger.SugaredLogger, backoffSettings, shouldRetry)
 	httpProxy := proxy.NewUpgradeAwareHandler(targetUrl, rt, true, false, er)
 	httpProxy.ServeHTTP(w, r)
 }
@@ -109,4 +117,114 @@ func (e *errorResponder) Error(w http.ResponseWriter, req *http.Request, err err
 	if _, err := w.Write([]byte(err.Error())); err != nil {
 		logrus.Errorf("error writing response: %v", err)
 	}
+}
+
+// the following code was taken from knative activator https://github.com/knative/serving/blob/eb01fb7078b18f16ee8cd97a46c6e57bf65123a8/pkg/activator/util/transports.go
+type retryCond func(*http.Response) bool
+
+func retryStatus(status int) retryCond {
+	return func(resp *http.Response) bool {
+		return resp.StatusCode == status
+	}
+}
+
+type retryRoundTripper struct {
+	logger          *zap.SugaredLogger
+	transport       http.RoundTripper
+	backoffSettings wait.Backoff
+	retryConditions []retryCond
+}
+
+// RetryRoundTripper retries a request on error or retry condition, using the given `retry` strategy
+func NewRetryRoundTripper(rt http.RoundTripper, l *zap.SugaredLogger, b wait.Backoff, conditions ...retryCond) http.RoundTripper {
+	return &retryRoundTripper{
+		logger:          l,
+		transport:       rt,
+		backoffSettings: b,
+		retryConditions: conditions,
+	}
+}
+
+func (rrt *retryRoundTripper) RoundTrip(r *http.Request) (resp *http.Response, err error) {
+	// The request body cannot be read multiple times for retries.
+	// The workaround is to clone the request body into a byte reader
+	// so the body can be read multiple times.
+	if r.Body != nil {
+		rrt.logger.Debugf("Wrapping body in a rewinder.")
+		r.Body = NewRewinder(r.Body)
+	}
+
+	attempts := 0
+	wait.ExponentialBackoff(rrt.backoffSettings, func() (bool, error) {
+		rrt.logger.Debugf("Retrying")
+
+		attempts++
+		r.Header.Add(RequestCountHTTPHeader, strconv.Itoa(attempts))
+		resp, err = rrt.transport.RoundTrip(r)
+
+		if err != nil {
+			rrt.logger.Errorf("Error making a request: %s", err)
+			return false, nil
+		}
+
+		for _, retryCond := range rrt.retryConditions {
+			if retryCond(resp) {
+				resp.Body.Close()
+				return false, nil
+			}
+		}
+		return true, nil
+	})
+
+	if err == nil {
+		rrt.logger.Infof("Finished after %d attempt(s). Response code: %d", attempts, resp.StatusCode)
+
+		if resp.Header == nil {
+			resp.Header = make(http.Header)
+		}
+
+		resp.Header.Add(RequestCountHTTPHeader, strconv.Itoa(attempts))
+	} else {
+		rrt.logger.Errorf("Failed after %d attempts. Last error: %v", attempts, err)
+	}
+
+	return
+}
+
+type rewinder struct {
+	sync.Mutex
+	rc io.ReadCloser
+	rs io.ReadSeeker
+}
+
+// rewinder wraps a single-use `ReadCloser` into a `ReadCloser` that can be read multiple times
+func NewRewinder(rc io.ReadCloser) io.ReadCloser {
+	return &rewinder{rc: rc}
+}
+
+func (r *rewinder) Read(b []byte) (int, error) {
+	r.Lock()
+	defer r.Unlock()
+	// On the first `Read()`, the contents of `rc` is read into a buffer `rs`.
+	// This buffer is used for all subsequent reads
+	if r.rs == nil {
+		buf, err := ioutil.ReadAll(r.rc)
+		if err != nil {
+			return 0, err
+		}
+		r.rc.Close()
+
+		r.rs = bytes.NewReader(buf)
+	}
+
+	return r.rs.Read(b)
+}
+
+func (r *rewinder) Close() error {
+	r.Lock()
+	defer r.Unlock()
+	// Rewind the buffer on `Close()` for the next call to `Read`
+	r.rs.Seek(0, io.SeekStart)
+
+	return nil
 }
