@@ -8,9 +8,10 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
+	"github.com/rancher/mapper/convert"
 	"github.com/sirupsen/logrus"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -90,7 +91,7 @@ func emptyMaps(data map[string]interface{}, keys ...string) bool {
 			return false
 		}
 
-		data = toMapInterface(value)
+		data = convert.ToMapInterface(value)
 	}
 
 	return true
@@ -193,7 +194,7 @@ func removeCreationTimestamp(data map[string]interface{}) bool {
 		return false
 	}
 
-	data = toMapInterface(metadata)
+	data = convert.ToMapInterface(metadata)
 	if _, ok := data["creationTimestamp"]; ok {
 		delete(data, "creationTimestamp")
 		return true
@@ -322,9 +323,4 @@ func getPatchStyle(gvk schema.GroupVersionKind) (types.PatchType, strategicpatch
 	patchCacheLock.Unlock()
 
 	return patchType, lookupPatchMeta, nil
-}
-
-func toMapInterface(obj interface{}) map[string]interface{} {
-	v, _ := obj.(map[string]interface{})
-	return v
 }

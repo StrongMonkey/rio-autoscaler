@@ -12,8 +12,12 @@ import:
   version: v0.1.0
 - package: github.com/davecgh/go-spew
   version: v1.1.0-1-g782f4967f2dc45
+- package: github.com/docker/distribution
+  version: v2.6.0-rc.1-209-gedc3ab29cdff86
 - package: github.com/evanphx/json-patch
   version: v4.1.0-19-g5858425f75500d
+- package: github.com/ghodss/yaml
+  version: v1.0.0-4-gc7ce16629ff4cd
 - package: github.com/go-ini/ini
   version: v1.25.4
 - package: github.com/gogo/protobuf
@@ -65,6 +69,8 @@ import:
   version: v1.0.1
 - package: github.com/mxk/go-flowrate
   version: cca7078d478f8520f85629ad7c68962d31ed7682
+- package: github.com/opencontainers/go-digest
+  version: a6d0ee40d4207ea02364bd3b9e8e77b9159ba1eb
 - package: github.com/peterbourgon/diskv
   version: v2.0.1
 - package: github.com/pkg/errors
@@ -85,7 +91,7 @@ import:
   version: f4ea6f2632ebd8051c7e28069443e9e1e36ce900
   repo: https://github.com/StrongMonkey/rio.git
 - package: github.com/rancher/wrangler
-  version: a8b539c006b5abbf4645bdb520c05da893393bf8
+  version: d0fb577eca600d8277fe83b408677b6c6671c5d4
   repo: https://github.com/StrongMonkey/wrangler.git
 - package: github.com/sirupsen/logrus
   version: v1.0.3-11-g89742aefa4b206
@@ -129,5 +135,12 @@ import:
   version: v2.2.1
 - package: k8s.io/klog
   version: 8139d8cb77af419532b33dfa7dd09fbc5f1d344f
+- package: k8s.io/kubernetes
+  version: v1.13.4-k3s.2
+  repo: https://github.com/rancher/k3s.git
+  transitive: true
+  staging: true
+- package: k8s.io/utils
+  version: 66066c83e385e385ccc3c964b44fd7dcd413d0ed
 - package: sigs.k8s.io/yaml
   version: v1.1.0
